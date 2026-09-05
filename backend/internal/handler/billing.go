@@ -94,7 +94,7 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CancelSubscription cancels the current Razorpay subscription at end of billing cycle.
+// CancelSubscription cancels the subscription and downgrades the organization to Free plan.
 func (h *Handler) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 	orgID, ok := getOrgID(r)
 	if !ok {
@@ -108,28 +108,37 @@ func (h *Handler) CancelSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if org.RzpSubscriptionID == nil || *org.RzpSubscriptionID == "" {
-		respond.Error(w, http.StatusBadRequest, "no active subscription")
+	if org.PlanTier == model.PlanFree && ((org.SubscriptionStatus != nil && *org.SubscriptionStatus == "cancelled") || org.RzpSubscriptionID == nil || *org.RzpSubscriptionID == "") {
+		respond.Error(w, http.StatusBadRequest, "no active paid subscription to cancel")
 		return
 	}
 
-	rzpClient := billing.New(
-		os.Getenv("RAZORPAY_KEY_ID"),
-		os.Getenv("RAZORPAY_KEY_SECRET"),
-		os.Getenv("RAZORPAY_WEBHOOK_SECRET"),
-	)
-
-	if err := rzpClient.CancelSubscription(r.Context(), *org.RzpSubscriptionID, true); err != nil {
-		respond.Error(w, http.StatusInternalServerError, fmt.Sprintf("cancel error: %v", err))
-		return
+	// If linked to a real Razorpay subscription, attempt to cancel on Razorpay
+	if org.RzpSubscriptionID != nil && strings.HasPrefix(*org.RzpSubscriptionID, "sub_") {
+		rzpClient := billing.New(
+			os.Getenv("RAZORPAY_KEY_ID"),
+			os.Getenv("RAZORPAY_KEY_SECRET"),
+			os.Getenv("RAZORPAY_WEBHOOK_SECRET"),
+		)
+		if err := rzpClient.CancelSubscription(r.Context(), *org.RzpSubscriptionID, false); err != nil {
+			// Log Razorpay error but do not block internal downgrade
+			fmt.Printf("[billing] Warning: Razorpay cancel failed for %s: %v\n", *org.RzpSubscriptionID, err)
+		}
 	}
 
+	// Downgrade organization plan to Free immediately
+	_ = h.Store.UpdateOrgPlan(r.Context(), orgID, model.PlanFree, 7)
 	_ = h.Store.UpdateOrgSubscriptionStatus(r.Context(), orgID, "cancelled")
 
 	userID, _ := getUserID(r)
-	h.writeAudit(r, orgID, userID, "user", "billing.subscription_cancelled", "organization", &orgID, nil)
+	h.writeAudit(r, orgID, userID, "user", "billing.subscription_cancelled", "organization", &orgID, map[string]any{
+		"previous_plan": org.PlanTier,
+	})
 
-	respond.OK(w, map[string]string{"status": "cancelled_at_period_end"})
+	respond.OK(w, map[string]string{
+		"status":  "cancelled",
+		"message": "Subscription cancelled and downgraded to Free plan.",
+	})
 }
 
 // GetSubscriptionStatus returns the current billing/subscription info.
