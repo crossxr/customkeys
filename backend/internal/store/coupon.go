@@ -29,7 +29,7 @@ func (s *Store) GetCouponByCode(ctx context.Context, code string) (*model.Coupon
 	return &c, nil
 }
 
-// RedeemCoupon applies the coupon to the organization in an atomic transaction.
+// RedeemCoupon applies or re-activates the coupon for the organization in an atomic transaction.
 func (s *Store) RedeemCoupon(ctx context.Context, coupon *model.Coupon, orgID, userID uuid.UUID, retentionDays int) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -37,30 +37,29 @@ func (s *Store) RedeemCoupon(ctx context.Context, coupon *model.Coupon, orgID, u
 	}
 	defer tx.Rollback(ctx)
 
-	// Check if already redeemed
-	var exists bool
-	err = tx.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM coupon_redemptions
-			WHERE coupon_id = $1 AND org_id = $2
-		)`, coupon.ID, orgID).Scan(&exists)
+	// Check if already active on this exact plan
+	var currentPlan string
+	var currentStatus *string
+	err = tx.QueryRow(ctx, `SELECT plan_tier, subscription_status FROM organizations WHERE id = $1`, orgID).Scan(&currentPlan, &currentStatus)
 	if err != nil {
 		return err
 	}
-	if exists {
+	if currentPlan == string(coupon.PlanTier) && currentStatus != nil && *currentStatus == "active" {
 		return ErrCouponRedeemed
 	}
 
-	// Record redemption
+	// Record or update redemption
 	_, err = tx.Exec(ctx, `
 		INSERT INTO coupon_redemptions (coupon_id, org_id, user_id, redeemed_at)
-		VALUES ($1, $2, $3, NOW())`,
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (coupon_id, org_id) DO UPDATE
+		SET redeemed_at = NOW(), user_id = EXCLUDED.user_id`,
 		coupon.ID, orgID, userID)
 	if err != nil {
 		return err
 	}
 
-	// Update org plan tier
+	// Update org plan tier and reactivate
 	_, err = tx.Exec(ctx, `
 		UPDATE organizations
 		SET plan_tier = $2,

@@ -321,7 +321,7 @@ func (h *Handler) RedeemCoupon(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.Store.RedeemCoupon(r.Context(), coupon, orgID, userID, retentionDays); err != nil {
 		if errors.Is(err, store.ErrCouponRedeemed) {
-			respond.Error(w, http.StatusConflict, "this coupon has already been redeemed by your organization")
+			respond.Error(w, http.StatusConflict, fmt.Sprintf("Your organization is already active on the %s plan", strings.ToUpper(string(coupon.PlanTier))))
 			return
 		}
 		respond.Error(w, http.StatusInternalServerError, "failed to apply coupon")
