@@ -18,8 +18,8 @@ const chalk = {
   bold: (t) => `\x1b[1m${t}\x1b[0m`,
 };
 
-const API_URL = process.env.CUSTOMKEYS_API_URL || 'http://localhost:8080';
-const DASHBOARD_URL = process.env.CUSTOMKEYS_DASHBOARD_URL || 'http://localhost:3000';
+const API_URL = process.env.CUSTOMKEYS_API_URL || 'https://customkeys-api-587208374116.us-central1.run.app';
+const DASHBOARD_URL = process.env.CUSTOMKEYS_DASHBOARD_URL || 'https://customkeys.superxepic.dev';
 const GLOBAL_CONFIG_PATH = path.join(os.homedir(), '.customkeys.json');
 const LOCAL_CONFIG_PATH = path.join(process.cwd(), '.customkeysrc');
 
@@ -101,7 +101,7 @@ async function getEnvId(projectId, envName) {
 program
   .name('customkeys')
   .description('CustomKeys Zero-Trust Platform CLI')
-  .version('1.0.0');
+  .version('1.0.6');
 
 // Login
 const authCommand = program.command('auth').description('Authentication subroutines');

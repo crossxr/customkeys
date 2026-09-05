@@ -1,6 +1,6 @@
 {
   "name": "@superxepic/customkeys",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "CustomKeys platform CLI",
   "main": "index.js",
   "bin": {
