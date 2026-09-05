@@ -318,3 +318,23 @@ type SharedSecret struct {
 	Secrets map[string]string `json:"secrets,omitempty"`
 }
 
+// ── Coupons / Promo Codes ───────────────────────────────────────────────────
+
+type Coupon struct {
+	ID          uuid.UUID `json:"id" db:"id"`
+	Code        string    `json:"code" db:"code"`
+	PlanTier    PlanTier  `json:"plan_tier" db:"plan_tier"`
+	Description string    `json:"description" db:"description"`
+	IsActive    bool      `json:"is_active" db:"is_active"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+}
+
+type CouponRedemption struct {
+	ID         uuid.UUID `json:"id" db:"id"`
+	CouponID   uuid.UUID `json:"coupon_id" db:"coupon_id"`
+	OrgID      uuid.UUID `json:"org_id" db:"org_id"`
+	UserID     uuid.UUID `json:"user_id" db:"user_id"`
+	RedeemedAt time.Time `json:"redeemed_at" db:"redeemed_at"`
+}
+
+

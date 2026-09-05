@@ -179,6 +179,7 @@ func NewRouter(cfg Config) http.Handler {
 			// ── Billing (all plans) ──
 			r.Post("/billing/subscribe", h.CreateSubscription)
 			r.Post("/billing/cancel", h.CancelSubscription)
+			r.Post("/billing/coupons/redeem", h.RedeemCoupon)
 			r.Get("/billing/status", h.GetSubscriptionStatus)
 			r.Get("/orgs/me/usage", h.GetOrgUsage)
 

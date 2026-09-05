@@ -2,15 +2,18 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/nan0/backend/internal/billing"
 	"github.com/nan0/backend/internal/model"
 	"github.com/nan0/backend/internal/respond"
+	"github.com/nan0/backend/internal/store"
 )
 
 // CreateSubscription creates a Razorpay subscription and returns the hosted page URL.
@@ -271,3 +274,61 @@ func (h *Handler) handleRzpSubscriptionPaused(r *http.Request, event billing.Web
 
 	_ = h.Store.UpdateOrgSubscriptionStatus(r.Context(), org.ID, "paused")
 }
+
+// RedeemCoupon handles promo/coupon code validation and instant plan upgrade.
+func (h *Handler) RedeemCoupon(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := getOrgID(r)
+	if !ok {
+		respond.Error(w, http.StatusForbidden, "no organization")
+		return
+	}
+
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := respond.Decode(r, &req); err != nil || strings.TrimSpace(req.Code) == "" {
+		respond.Error(w, http.StatusBadRequest, "coupon code is required")
+		return
+	}
+
+	coupon, err := h.Store.GetCouponByCode(r.Context(), req.Code)
+	if err != nil {
+		respond.Error(w, http.StatusNotFound, "invalid or expired coupon code")
+		return
+	}
+
+	userID, _ := getUserID(r)
+
+	// Determine retention days for the unlocked plan
+	retentionDays := 7
+	switch coupon.PlanTier {
+	case model.PlanStarter:
+		retentionDays = 90
+	case model.PlanBusiness:
+		retentionDays = 365
+	case model.PlanEnterprise:
+		retentionDays = 730
+	}
+
+	if err := h.Store.RedeemCoupon(r.Context(), coupon, orgID, userID, retentionDays); err != nil {
+		if errors.Is(err, store.ErrCouponRedeemed) {
+			respond.Error(w, http.StatusConflict, "this coupon has already been redeemed by your organization")
+			return
+		}
+		respond.Error(w, http.StatusInternalServerError, "failed to apply coupon")
+		return
+	}
+
+	h.writeAudit(r, orgID, userID, "user", "billing.coupon_redeemed", "organization", &orgID, map[string]any{
+		"coupon_code": coupon.Code,
+		"plan_tier":   coupon.PlanTier,
+	})
+
+	respond.OK(w, map[string]any{
+		"status":      "redeemed",
+		"plan_tier":   coupon.PlanTier,
+		"description": coupon.Description,
+		"message":     fmt.Sprintf("Successfully upgraded to %s plan!", strings.ToUpper(string(coupon.PlanTier))),
+	})
+}
+
